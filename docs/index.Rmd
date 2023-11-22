@@ -269,7 +269,7 @@ Renombremos para continuar análisis:
 panama_2023 <- panama_2023_red %>% mutate(Pop = Pop_red) %>% select(-Pop_red, -Pop_unk)
 ```
 
-En el caso de que se tenga más de una variable con desconocido, típicamente sexo, el paso previo debe ser repetido: una opción es primero distribuir el ignorado de edad dentro de cada sexo, y luego el sexo. Otras técnicas pueden ser la imputación mediante métodos estadísticos a nivel del micro dato.
+En el caso de que se tenga más de una variable con desconocido, típicamente sexo, el paso previo debe ser repetido: una opción es primero distribuir el ignorado de edad dentro de cada sexo, y luego el sexo.
 
 ### Atracción de edad y suavizamiento
 
@@ -763,7 +763,7 @@ asfr_qo <- QOSplit(c(panama_asfr5$asfr), L=seq(15,45,5), AgeInt=rep(5,7))
 asfr_graduation <- data.frame(
      Edad = rep(15:49, 3),
      Method = c(rep("Beers", 35), rep("CS", 35), rep("QO", 35)),
-     asfr = c(asfr_beers, asfr_cs, spline_cs$ASFR))
+     asfr = c(asfr_beers, asfr_cs, asfr_qo$ASFR))
 asfr_graduation %>% 
      ggplot(aes(Edad, asfr)) +
      geom_line(aes(col = Method)) +
