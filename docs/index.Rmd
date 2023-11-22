@@ -21,7 +21,6 @@ library(knitr)
 library(readxl)
 library(DemoTools)
 source("funs.R")
-source("funs_mlt.R")
 Sys.setlocale("LC_ALL", "Spanish_Spain.UTF-8")
 ```
 
@@ -29,13 +28,38 @@ Sys.setlocale("LC_ALL", "Spanish_Spain.UTF-8")
 
 ## Introducción
 
-El objetivo de este espacio es recorrer algunas técnicas básicas para el análisis demográfico, específicamente en lo relacionado a la evaluación censal. Utlizaremos funciones ya implementadas en paquetes de R y otras que no, pudiendo los asistentes adaptarlas a sus propios fines con posterioridad al workshop. Tataremos ejemplos prácticos con información de países de Latinoamérica.
 
-Nos valdremos prinicplamente del paquete [DemoTools](https://timriffe.github.io/DemoTools/index.html), elaborado por [Tim Riffe](https://www.ehu.eus/es/web/opik/tim-riffe) y colaboradores. ¡Gracias!
+### Objetivo y setting inicial
 
-Daremos por sentado cierto conociemiento de R y específicamente de `dplyr` and `ggplot`. Si no sos del caso te recomendamos ver algunos de los siguientes materiales: [web del paquete](https://dplyr.tidyverse.org/), o una [viñeta](https://cran.r-project.org/web/packages/dplyr/vignettes/dplyr.html#:~:text=dplyr%20aims%20to%20provide%20a,rows%20based%20on%20column%20values.) introductoria.
+El objetivo de este espacio es recorrer algunas técnicas básicas para el análisis demográfico, específicamente en lo relacionado a la evaluación censal. Utlizaremos funciones ya implementadas en paquetes de R y otras que no, pudiendo los asistentes adaptarlas a sus propios fines con posterioridad al workshop. Trataremos ejemplos prácticos con información de países de América Latina.
 
-Esperamos que este contenido les sirva para complementar su trabajo en el contexto de esta ronda censal.
+Nos valdremos principalmente del paquete [DemoTools](https://timriffe.github.io/DemoTools/index.html), elaborado por [Tim Riffe](https://www.ehu.eus/es/web/opik/tim-riffe) y colaboradores. ¡Gracias!
+
+¿Qué *formato* tendremos? Lo pensamos como taller, por lo que iremos corriendo el código a la par, tratando de que nos sigamos mutuamente. Si queda algo picando, podemos seguir conectándonos a través de correo electrónico.
+
+Daremos por sentado cierto conocimiento de R y específicamente de `dplyr` and `ggplot`. Si no sos del caso te recomendamos ver algunos de los siguientes materiales: [web del paquete](https://dplyr.tidyverse.org/), o una [viñeta](https://cran.r-project.org/web/packages/dplyr/vignettes/dplyr.html#:~:text=dplyr%20aims%20to%20provide%20a,rows%20based%20on%20column%20values.) introductoria.
+
+Se requiere la instalación de los siguientes paquetes:
+```{r, eval = F}
+install.packages("tidyverse")
+install.packages("readxl")
+install.packages("mipfp")
+install.packages("LexisPlotR")
+install.packages("MortalityLaws")
+install.packages("remotes")
+install.packages("quadprog")
+
+# y la instalación de DemoTools requiere dos pasos
+install.packages("rstan", repos = c("https://mc-stan.org/r-packages/", getOption("repos")))
+remotes::install_github("timriffe/DemoTools")
+```
+
+Utilizaremos funciones que no estan implementadas aún en paquetes, incluidas en el script:
+```{r}
+source("funs.R")
+```
+
+El repositorio donde esta alojado esta web lo podes encontrar [aquí](https://github.com/IvanWilli/workshop_pop_estimates_2020_round). Esperamos que este contenido les sirva para complementar su trabajo en el contexto de esta ronda censal.
 
 
 ### Data
@@ -57,27 +81,40 @@ census_LA %>%
      theme_minimal()
 ```
 
-Respecto a las defunciones y nacimientos, los data.frame `deaths_LA` y `births_LA` contienen información de eventos por sexo (del recién nacido en el primer caso) y edad (de madres en el primer caso). Por ejemplo Panama en 2015:
+Respecto a las defunciones y nacimientos, las tablas `deaths_LA` y `births_LA` contienen información de eventos por sexo (del recién nacido en el primer caso) y edad (de madres en el primer caso). Por ejemplo Panamá en 2022:
 
 ```{r}
 deaths_LA %>% 
-     filter(País == "Panama", Año == 2015) %>% 
+     filter(País == "Panama", Año == 2022) %>% 
      head()
 ```
 
 ```{r}
 births_LA %>% 
-     filter(País == "Panama", Año == 2015) %>% 
+     filter(País == "Panama", Año == 2022) %>% 
      head()
 ```
 
-Si quieres ver en profundidad su obtención puedes ver el código `get_data.R`.
+
+```{r}
+bind_rows(deaths_LA %>% mutate(Evento = "Defunciones"),
+          births_LA %>% mutate(Evento = "Nacimientos")) %>% 
+     distinct(Año, País, Evento) %>% 
+     ggplot(aes(Año, País)) + 
+     geom_line(data = . %>% filter(Evento == "Nacimientos")) +
+     geom_point(data = . %>% filter(Evento == "Defunciones"), col = 2) +
+     ggtitle("Nacimientos (línea) y defunciones (punto rojo) incluidos para el workshop") +
+     theme_minimal()
+```
+
+
+Si quieres ver en profundidad la obtención de la información puedes ver el script `get_data.R` en el [repositorio](https://github.com/IvanWilli/workshop_pop_estimates_2020_round/tree/main/docs).
 
 ## Población
 
 ### Evolución censal
 
-Sigamos con el caso de Panamá, aprovechando la publicación reciente de sus datos censales. La dinámica demográfica de este país estuvo muy relacionada con el desarrollo del canal, inlfuenciando el nivel de desarrollo económico y la condición de país atractor para la migración [@INEC2016].
+Sigamos con el caso de Panamá, aprovechando la publicación reciente sobre el censo 2023. Fue un censo [de-jure](https://www.inec.gob.pa/archivos/P0705547520231009161454Definiciones%20y%20explicaciones%20Censo%202023%20RFB-VF.pdf), resultando en más de [4 millones](https://www.inec.gob.pa/archivos/P053342420231009161532Comentarios_Poblacion%20RFB%202023%20VF.pdf) de personas residentes. La dinámica demográfica de este país estuvo muy relacionada con el desarrollo del canal, influenciando el nivel de desarrollo económico y la condición de país atractor para la migración [@INEC2016].
 
 Resumamos en la siguiente tabla la evolución de la población censada, la fecha y tipo de censo, el ritmo de crecimiento (tasa de crecimiento medio anual), el porcentaje de mujeres y la edad media:
 
@@ -95,27 +132,28 @@ panama %>%
      kable_classic(full_width = F)
 ```
 
-Cabe aclarar que no nos adentraremos en detalle sobre la evolución y sitaución actual demográfica de Panamá, ni daremos estimaciones más acabadas que las publicadas por el INEC (por ejemplo solo tomamos población censada, no ajustada), sino que nos servirá para trabajar en R disintas aplicaciones.
+Cabe aclarar que no nos adentraremos en detalle sobre la evolución y situación actual demográfica de Panamá, ni daremos estimaciones más acabadas que las publicadas por el INEC (por ejemplo solo tomamos población censada, no ajustada), sino que nos servirá para trabajar en R distintas aplicaciones.
 
 ### Edad y sexo
 
-Visualizemos su distribución por edad y sexo. Lo primero que se observa es un proceso de envejecimiento, con angostamiento en la base, y resalta a simple vista una declaración por edad más precisa con el tiempo que luego mediremos más en detalle.
+Visualicemos su distribución por edad y sexo. Lo primero que se observa es un proceso de envejecimiento, con angostamiento en la base, y resalta a simple vista una declaración por edad más precisa con el tiempo que luego mediremos más en detalle.
 
 ```{r}
 panama %>%
-     filter(Año != 1970, Edad < 100) %>% # el censo de 1970 se encuentra agrupado por edad quinquenal
+     filter(!Año %in% c(1970,1980), Edad < 100) %>% # el censo de 1970 se encuentra agrupado por edad quinquenal
      mutate(Pop = ifelse(Sexo == "Hombre", -Pop, Pop)/sum(Pop), .by = c(Año)) %>% 
      ggplot(aes(Edad, Pop, fill = Sexo)) +
      geom_bar(stat = "identity") + 
      scale_fill_manual(values = c("blue","orange")) +
      scale_x_continuous(labels = seq(0,100,10), breaks =  seq(0,100,10)) +
+     scale_y_continuous(labels = abs) +
      coord_flip() +
+     ggtitle("Pirámides de población censal. Panamá") +
      theme_bw() + 
-     ggtitle("Pirámides de población censal. Panamá")+
      facet_wrap(~Año)
 ```
 
-El último censo nos muestra una base más pequeña, sugiriendo una evolución intercensal de nacimientos decreciente.
+El último censo nos muestra una base más pequeña, sugiriendo una evolución intercensal de nacimientos decreciente, una posible omisión en menores, o ambos factores.
 
 ```{r}
 panama %>%
@@ -125,13 +163,14 @@ panama %>%
      geom_bar(stat = "identity") + 
      scale_fill_manual(values = c("blue", "orange")) +
      scale_x_continuous(labels = seq(0,100,10), breaks =  seq(0,100,10), limits = c(0, 100)) +
+     scale_y_continuous(labels = abs) +
      coord_flip() +
      theme_bw() + 
      ggtitle("Pirámides de población censal 2023. Panamá")
 ```
 
 
-El índice de masculinidad permite ver el proceso de feminización visto en la tabla resumen, sobre todo en edades activas. El IM en censos previos a 1990 muestra una gran variabilidad, por lo que utilizamos la función `geom_smooth` de `ggplot` para tener idea de su patrón. Aquí puede tener una gran influencia el cambio en el tipo de censo, donde el último relaizado es el primero *de-jure* (o *de derecho*), enfocándose en captar la población residente.
+El índice de masculinidad permite ver el proceso de feminización visto en la tabla resumen, sobre todo en edades activas. El IM en censos previos a 1990 muestra una gran variabilidad, por lo que utilizamos la función `geom_smooth` de `ggplot` para tener idea de su patrón. Aquí puede tener una gran influencia el cambio en el tipo de censo, donde el último realizado es el primero *de-jure* (o *de derecho*), enfocándose en captar la población residente.
 
 ```{r}
 panama %>% 
@@ -142,18 +181,19 @@ panama %>%
      geom_smooth(data = . %>% filter(Año < 2023), span = .6, se = F) +
      geom_line(data = . %>% filter(Año == 2023), col = 1, linewidth = 1.5) +
      geom_hline(yintercept = 1, col = 2 , linetype = 2) +
+     labs(color = "Censo") +
      scale_x_continuous(labels = seq(0, 100, 5), breaks = seq(0, 100, 5)) +
      ggtitle("Índice de masculinidad (Hombre/Mujer) por edad. Censos de Panamá") +
      theme_bw()
 ```
 
-En términos de análisis intercensal por cohorte, en ausencia de importantes eventos de impacto demográfico (flujos migratorios, guerra, desplazamientos, etc.), y en ausencia tambien de omisión diferencial por censo, se esperaría ver que el ratio por cohorte refleje el efecto de la mortalidad [@Siegel2004]. Su cálculo:
+En términos de análisis intercensal por cohorte, en ausencia de importantes eventos de impacto demográfico (flujos migratorios, guerra, desplazamientos, etc.), y en ausencia también de omisión diferencial por censo, se esperaría ver que el ratio por cohorte refleje el efecto de la mortalidad [@Siegel2004]. No puede dar idea de omisión diferencial sino de consistencia. Su cálculo:
 
 $$
-R_x(t, t+n) = \frac{P_{x+n}(t+n)}{P_{x}(t)}
+cr_x(t, t+n) = \frac{P_{x+n}(t+n)}{P_{x}(t)}
 $$
 
-El ratio se puede calcular por edad simple o por grupos quinquenales para evitar fluctuaciones. En los dos últimos períodos intercensales tenemos distintos intervalos, pero igual nos permite conocer algo. Asumamos por ahora que la distancia de 10 y 13 años respectivamente para los dos últimos períodos intercensales, y recorramos el código:
+El ratio se puede calcular por edad simple o por grupos quinquenales para evitar fluctuaciones. En los dos últimos períodos intercensales tenemos distintos intervalos, pero igual nos permite conocer algo. Asumamos que la distancia es de 13 años exactos en el último período intercensal:
 
 ```{r}
 panama_2010_2023_cohort_ratios <- panama %>% 
@@ -167,7 +207,7 @@ panama_2010_2023_cohort_ratios <- panama %>%
 head(panama_2010_2023_cohort_ratios)
 ```
 
-Aquellos valores por encima de 1 pueden hablar de omisión diferencial entre censos o fenómenos demográficos específicos. Por ejemplo la población nacida entre 2005 y 2009 parece estar subenumerada en 2010 (la población censada 13 años después es mayor). Luego en las cohortes 1995-1980 (con edades activas en período intercensal) se observa un ratio mayor a 1 en mujeres, y en varones cierta estabilidad. Luego en cohortes más antiguas el comportamiento es decreciente, como se espera.
+Aquellos valores por encima de 1 pueden hablar de omisión diferencial entre censos o fenómenos demográficos específicos (aunque de vuelta, el método ve consistencia). Por ejemplo la población nacida entre 2005 y 2009 parece estar subenumerada en 2010 (la población censada 13 años después es mayor). Luego en las cohortes 1995-1980 (con edades activas en período intercensal) se observa un ratio mayor a 1 en mujeres, y en varones cierta estabilidad. Luego en cohortes más antiguas el comportamiento es decreciente, como se espera.
 
 ```{r}
 panama_2010_2023_cohort_ratios %>%
@@ -182,9 +222,9 @@ panama_2010_2023_cohort_ratios %>%
      theme_bw()
 ```
 
-En algunos casos, una visión por grupos quineuanles de edad puede ser más ilustrativa visualmente, removiendo la aleatoriedad propia de la desagregación por edad simple. En base a estos primeros diagnósticos visuales podemos identificar algunos aspectos que podemos analizar o ajustar mediante técnicas demográficas específicas.
+En algunos casos, una visión por grupos quinquenales de edad puede ser más ilustrativa visualmente, removiendo la aleatoriedad propia de la desagregación por edad simple. En base a estos primeros diagnósticos visuales podemos identificar algunos aspectos que podemos analizar o ajustar mediante técnicas demográficas específicas.
 
-### Edad y sexo ignorada
+### Edad ignorada
 
 Empecemos por algo bastante común: los casos de edad y/o sexo ignorada. El año 2023 tiene casos de edad ignorada pero no sexo ignorado. 
 
@@ -193,6 +233,8 @@ panama_2023 <- panama %>%
      filter(Año == 2023) %>% 
      mutate(Edad = pmin(Edad, 100)) %>% 
      summarise(Pop = sum(Pop), .by = c(Sexo, Edad))
+
+# filtro casos con datos vacíos
 panama_2023 %>% filter(is.na(Edad) | is.na(Sexo))
 ```
 
@@ -202,8 +244,8 @@ Veamos el impacto:
 # cuantas personas de edad ignorada
 sum(panama_2023$Pop[is.na(panama_2023$Edad)])
 
-# peso en el total censado
-sum(panama_2023$Pop[is.na(panama_2023$Edad)])/sum(panama_2023$Pop)
+# porcentaje en el total censado
+sum(panama_2023$Pop[is.na(panama_2023$Edad)])/sum(panama_2023$Pop)*100
 ```
 
 El impacto en este caso es menor, por lo que la redistribución proporcional es un buen recurso. La idea es tomar los casos de edad desconocida, obtener su suma por sexo, y mediante la proporción con edad y sexo dentro de lo conocido, imputar. Luego debemos checkear que tenemos el mismo total poblacional.
@@ -217,22 +259,21 @@ panama_2023_red <- panama_2023 %>%
                      filter(!is.na(Edad))) %>% 
      mutate(Pop_red = Pop + Pop/sum(Pop) * Pop_unk, .by = Sexo)
 
-# chequiemos que el total se respete
+# chequeemos que el total se respete
 sum(panama_2023$Pop) == sum(panama_2023_red$Pop_red)
 ```
 
 Renombremos para continuar análisis:
 
 ```{r}
-# 
 panama_2023 <- panama_2023_red %>% mutate(Pop = Pop_red) %>% select(-Pop_red, -Pop_unk)
 ```
 
-En el caso de que se tenga más de una variable con desconocido, típicamente sexo, el paso previo debe ser repetido: una opción es primero distribuir el ignorado de edad dentro de cada sexo, y luego el sexo. Otras técnicas pueden ser la imputación mediante métodos estadísticos a nivel del microdato.
+En el caso de que se tenga más de una variable con desconocido, típicamente sexo, el paso previo debe ser repetido: una opción es primero distribuir el ignorado de edad dentro de cada sexo, y luego el sexo. Otras técnicas pueden ser la imputación mediante métodos estadísticos a nivel del micro dato.
 
 ### Atracción de edad y suavizamiento
 
-La distribución por edad puede mostrar algunos picos que podrían atribuirse a sesgos en la declaración, por atracción hacia ciertos dígitos, o hacia edades más avanzadas. Existen varios indicadores de actracción [implementados en DemoTools](https://timriffe.github.io/DemoTools/articles/Age-heaping_quality_with_Demotools.html) para su diagnóstico. Por ejemplo para el año 2023, en hombres, solo para edades entre 10 y 65:
+La distribución por edad puede mostrar algunos picos que podrían atribuirse a sesgos en la declaración, por atracción hacia ciertos dígitos, o hacia edades más avanzadas. Existen varios indicadores de atracción [implementados en DemoTools](https://timriffe.github.io/DemoTools/articles/Age-heaping_quality_with_Demotools.html) para su diagnóstico. Por ejemplo para el año 2023, en hombres, solo para edades entre 10 y 65:
 
 ```{r}
 library(DemoTools)
@@ -249,19 +290,22 @@ bachi_panama2023_hombre <- check_heaping_bachi(panama_2023_hombre$Pop, panama_20
                              ageMin = 10, ageMax = 65)
 # juntar
 data.frame(Indicador = c("Whipple", "Myers", "Bachi"),
-           Valor = c(whipple_panama2023_hombre, myers_panama2023_hombre, bachi_panama2023_hombre)) %>% kbl(caption = "Indicadores de atracción de edades. Panamá 2023") %>% kable_classic(full_width = F)
+           Valor = c(whipple_panama2023_hombre, myers_panama2023_hombre, bachi_panama2023_hombre)) %>% 
+     kbl(caption = "Indicadores de atracción de edades. Panamá 2023") %>% 
+     kable_classic(full_width = F)
 ```
 
-Respecto al rango de valores "aceptables", Whipple con resultados para dígitos 0 y 5 va de 1 (sin heaping) a 5 (concentración total), Myers mide la atracción para todos los dígitos y va de 0 (sin heaping) a 90 (mayor atracción), siendo Bachi muy similar a este último. Como se ve, la declaración sepuede considerar muy buena. También se ve una alta correlación entre índices.
-Pero quizás convenga también verlo desde una perspectiva histórica: el reciente censo presenta una declaración mucho más precisa que los anteriores.
+Respecto al rango de valores "aceptables", Whipple (con resultados para dígitos 0 y 5) va de 1 (sin heaping) a 5 (concentración total), Myers mide la atracción para todos los dígitos y va de 0 (sin heaping) a 90 (mayor atracción), siendo Bachi muy similar a este último. Como se ve, la declaración se puede considerar muy buena. Estos indicadores de preferencia/atracción descansan en una comparación respecto a un supuesto de distribución por edad (en general lineal), donde a veces la estructura por edad puede ser resultado de un efecto cohorte.
+
+Quizás convenga también verlo desde una perspectiva histórica: el reciente censo presenta una declaración mucho más precisa que los anteriores. También se ve una alta correlación entre índices. 
 
 ```{r}
 panama_heaping_index <- panama %>% 
+     # dejamos fuera Edad ignorada y censo 1970 por edades agrupadas
      filter(!is.na(Edad), Año != 1970) %>% 
+     # dividir en listas y aplicar funciones de cálculo de indicadores
      split(list(.$Año, .$Sexo)) %>% 
      map_df(function(census){
-          # print(paste0(unique(census$Anio), unique(census$Sexo)))
-          # census <- panama %>% filter(!is.na(Edad), `Año` == 1950, Sexo == "Hombre")
           whipple <- check_heaping_whipple(census$Pop, census$Edad, ageMin = 10, ageMax = 65)
           myers <- check_heaping_myers(census$Pop, census$Edad, ageMin = 10, ageMax = 65)
           bachi <- check_heaping_bachi(census$Pop, census$Edad, ageMin = 10, ageMax = 65)
@@ -280,9 +324,9 @@ panama_heaping_index %>%
      theme_bw()
 ```
 
-En el protocolo de WPP-NU [@WPP_Method2022], la División de Población consideró el índice de Bachi para los casos de edad simple (o el Puntuación de la proporción de edades para recuentos por grupo de edad de cinco años), junto con el nivel medio de educación completado por los adultos de la población, para determinar el grado de suavizamiento sobre la edad a aplicar mediante una media móvil.
+En el protocolo de WPP-NU [@WPP_Method2022], la División de Población consideró el índice de Bachi para los casos de edad simple, junto con el nivel medio de educación completado por los adultos de la población, para determinar el grado de suavizamiento sobre la edad a aplicar mediante una media móvil.
 
-La población por edad en el último censo tiene una distribución.
+La población por edad en el último censo tiene la siguiente distribución:
 
 ```{r}
 panama_2023 %>%
@@ -295,20 +339,23 @@ panama_2023 %>%
      theme(panel.grid.minor.x = element_blank())
 ```
 
-LO ideal sería contar con una encuesta post-censal que permita inferir la distribución por edad más acorde. Cuando no es posible, distintas opciones estan disponibles para suavizar. Aquí vemos algunas implementadas en `DemoTools`: 
+Lo ideal sería contar con una encuesta post-censal que permita inferir la distribución por edad más acorde. Cuando no es posible, distintas opciones están disponibles para suavizar. Aquí vemos algunas implementadas en `DemoTools`, lascuales funcionan sobre edades agrupadas, por lo que ese paso es necesario previamente: 
 
 ```{r}
 graduación <- panama_2023 %>% 
+     # separamos los dos sexos en una lista y aplicamos la graduación según cada método
      split(.$Sexo) %>% 
      map_df(function(panama_2023_sexo){
-          # panama_2023_sexo <- panama_2023 %>% filter(Sexo == "Mujer")
+          # agrupamiento en edades quinquenales
           panama_2023_sexo_5 <- panama_2023_sexo %>% 
                mutate(Edad5 = trunc(Edad/5) * 5) %>% 
                summarise(Pop5 = sum(Pop), .by = Edad5)
+          # cómputo de indicadores
           sprague <-   graduate(panama_2023_sexo_5$Pop5, panama_2023_sexo_5$Edad5, method = "sprague")
           beers <-     graduate(panama_2023_sexo_5$Pop5, panama_2023_sexo_5$Edad5, method = "beers(ord)")
           mono.grad <- graduate(panama_2023_sexo_5$Pop5, panama_2023_sexo_5$Edad5, method = "mono")
           pclm.grad <- graduate(panama_2023_sexo_5$Pop5, panama_2023_sexo_5$Edad5, method = "pclm")
+          # resulatdo por sexo
           results_sex <- data.frame(Sexo = unique(panama_2023_sexo$Sexo),
                                     Edad = rep(0:100, 4),
                                     Pop = c(sprague, beers, mono.grad, pclm.grad),
@@ -316,6 +363,8 @@ graduación <- panama_2023 %>%
                                                rep("mono", 101), rep("pclm", 101)))
           return(results_sex)
      })
+
+# plot
 plot_graduación <- bind_rows(panama_2023 %>% select(Sexo, Edad, Pop) %>% mutate(method = "Observado"),
           graduación) %>% 
      ggplot() +
@@ -347,7 +396,7 @@ plot_graduación +
      geom_line(data = mav, aes(Edad, Pop, col = method), linewidth = 1)
 ```
 
-Siempre es importante checkear totales y distribución por grandes grupos de edad, aunque algunos métodos lo garanticen (`Sprague`):
+Siempre es importante corroborar totales (y distribución por grandes grupos de edad), aunque algunos métodos lo garanticen de antemano (por ejemplo `Sprague`):
 
 ```{r}
 graduación %>% 
@@ -355,16 +404,15 @@ graduación %>%
      mutate(Diff = sum(panama_2023$Pop) - Pop_grad)
 ```
 
-En el caso de WPP-NU [@WPP_Method2022], las evaluaciones de acumulación de edad y el suavizado se realizaron por separado para las edades de niños y adultos y el  las series resultantes se sumaron al postajuste. Cuando la serie de datos del censo se agrupó por grupos de edad de cinco años, la serie ajustada y suavizada finalmente se graduó hasta un solo año de edad utilizando un spline monótono. Cuando fue necesario, los recuentos se redistribuyeron al grupo de edad indefinido de 105 años o más utilizando la función OPAG del Paquete DemoTools R, que aplicó la tabla de vida estimada para el país y el año del censo como un estado estable.
-estándar.
+En el caso de WPP-NU [@WPP_Method2022], las evaluaciones de acumulación de edad y el suavizado se realizaron por separado para las edades de niños y adultos y las series resultantes se sumaron al postajuste. Cuando la serie de datos del censo se agrupó por grupos de edad de cinco años, la serie ajustada y suavizada finalmente se graduó a edades simples utilizando spline monótono (`method = "mono"`). Cuando fue necesario, los recuentos se redistribuyeron al grupo de edad indefinido de 105 años o más utilizando la función `OPAG` ([documentación](https://timriffe.github.io/DemoTools/reference/OPAG.html)), que aplicó la tabla de vida estimada para el país y el año del censo como un estado estable.
 
 ### Edades iniciales
 
-Vimos en la pirámide que las edades iniciales sugieren una reciente baja de la natalidad, sin embargo el descenso de la natalidad parece comienzar en 2019. Evaluaremos la población en edades menores a 10 sobreviviendo los nacimientos de esas cohortes. 
+Vimos en la pirámide que las edades iniciales sugieren una reciente baja de la natalidad, sin embargo el descenso de la natalidad parece comenzar en 2019. Evaluaremos la población en edades menores a 10 sobreviviendo los nacimientos de esas cohortes. 
 
 ```{r}
 panama_nacs <- births_LA %>% 
-     distinct %>% 
+     # distinct %>% 
      filter(País == "Panama", Edad_interv != 1) %>% 
      group_by(País, Año, Sexo, Edad) %>% slice(1) %>% ungroup %>%  
      summarise(Births = sum(Births), .by = c(Año, Sexo))
@@ -379,7 +427,7 @@ panama_nacs %>%
 Por el lado de las defunciones, nos interesan aquellas de edad menor a 10 desde el año 2013:
 ```{r}
 panama_defs <- deaths_LA %>% 
-     distinct %>% 
+     # distinct %>% 
      filter(País == "Panama", Año >= 2013) %>% 
      group_by(País, Año, Sexo, Edad, Edad_interv) %>% slice(1) %>%   
      summarise(Deaths = sum(Deaths)) %>% 
@@ -406,7 +454,7 @@ panama_defs <-
                panama_defs_2022 %>% mutate(Año = 2022))
 ```
 
-El siguiente paso es asignar el año de nacimiento en cada año y edad, es decir distribuir por triángulos inferior y superior. Para esto es necesario el concepto de $a_x$: la cantidad de años promedio vivida por las defucniones de edad $x$, y desde allí entender que este tiempo promedio y el porcentaje de defunciones correspondiente al triángulo superior tienen una relación de equivalencia formal [@Andreev2015]. En el siguiente plot podemos ver visualmente de qué estamos hablando utilizando el paquete `LexisPlotR`:
+El siguiente paso es asignar el año de nacimiento en cada año y edad, es decir distribuir por triángulos inferior y superior. Para esto es necesario el concepto de $a_x$: la cantidad de años promedio vivida por las defunciones de edad $x$, y desde allí entender que este tiempo promedio y el porcentaje de defunciones correspondiente al triángulo superior tienen una relación de equivalencia formal [@Andreev2015]. En el siguiente plot podemos ver visualmente de qué estamos hablando utilizando el paquete `LexisPlotR`:
 
 ```{r, out.width="50%"}
 library(LexisPlotR)
@@ -425,7 +473,7 @@ lexis_grid(year_start = 2020, year_end = 2023, age_start = 0, age_end = 2) %>%
 ```
 
 
-Para obtener $a_0$ existen muchas opciones. `DemoTools` pone a disposición las opciones de Coale-Demeny, la utilizada por el grupo HMD a traves de la función `lt_rule_1a0`, o Keyfitz-Flieger (Watcher, 2006) que toman como argumento la tasa de mortalidad infantil (definicda como $D_0(t)/B(t)$) [@Preston2000, @HMDProtocol, @Wachter2006]. Tomemos el promedio del período como referencia:
+Para obtener $a_0$ existen muchas opciones. `DemoTools` pone a disposición las opciones de Coale-Demeny, la utilizada por el grupo HMD a través de la función `lt_rule_1a0`, o Keyfitz-Flieger que toman como argumento la tasa de mortalidad infantil (definida como $D_0(t)/B(t)$) [@Preston2000; @HMDProtocol; @Wachter2006]. Tomemos el promedio del período como referencia:
 
 ```{r}
 a0 <- panama_nacs %>% 
@@ -447,12 +495,12 @@ Para restar las defunciones a cada cohorte, podemos aplicar la función `lexis_p
 # prepara data para lexis
 panama_defs_lexis <- panama_defs %>% 
      filter(Edad %in% 0:9, Año %in% 2013:2022) %>% 
-     select(yd = Año, age = Edad, sex = Sexo, D = Deaths) %>% 
-     distinct()
+     select(yd = Año, age = Edad, sex = Sexo, D = Deaths) 
+     # distinct()
 panama_nacs_lexis <- panama_nacs %>% 
      filter(Año %in% 2013:2022) %>% 
-     select(yb = Año, sex = Sexo, B = Births) %>% 
-     distinct()
+     select(yb = Año, sex = Sexo, B = Births) 
+     # distinct()
 
 # lexis
 pop_0a9_2023_mujeres <- lexis_pop(deaths = panama_defs_lexis %>% filter(sex == "Mujer"), 
@@ -464,36 +512,53 @@ pop_0a9_2023_hombres <- lexis_pop(deaths = panama_defs_lexis %>% filter(sex == "
 
 # por ejemplo para Hombres
 pop_0a9_2023_mujeres$plot_lexis +
-     ggtitle("Evolución por cohorte según eventos observados. Panamá") 
+     ggtitle("Evolución por cohorte según eventos observados. Diagrama de Lexis. Panamá") 
 ```
 
 Finalmente, volvemos al objetivo final de esta sección, comparar la población menor a 10 con la censada en 2023. Tengamos en cuenta la diferencia del momento de evaluación (fecha de referencia censal y comienzo de año), aunque es solo de un mes. El gráfico siguiente y la comparación de las diferencias absoluta y relativas nos permite tener una idea más acabada sobre si un ajuste es necesario:
 
 ```{r}
+# población estimada por Lexis
 panama_lexis_pop2023 <- bind_rows(
      pop_0a9_2023_mujeres$pop_out %>% mutate(Sexo = "Mujer"),
      pop_0a9_2023_hombres$pop_out %>% mutate(Sexo = "Hombre")) %>% 
      filter(t == 2023)
 
-# comparison with census
-panama_2023 <- read.csv("census_LA.csv") %>% 
-     filter(Pais == "Panama", Anio == 2023)
+# censo
+panama_2023 <- census_LA %>% 
+     filter(País == "Panama", Año == 2023)
 
 ggplot() +
-     geom_line(data = panama_2023 %>% filter(Edad < 20), aes(Edad, Pop))+
+     geom_line(data = panama_2023 %>% filter(Edad < 15), aes(Edad, Pop))+
      geom_line(data = panama_lexis_pop2023, aes(age, pop), col = 2) +
      scale_y_continuous(limits = c(0, 40000)) +
+     scale_x_continuous(labels = 0:15, breaks = 0:15) +
      facet_wrap(~ Sexo) +
      ggtitle("Población censal y estimación a aprtir de eventos. Panamá 2023")  +
-     theme_bw()
+     theme_bw() +
+     theme(panel.grid.minor.x = element_blank())
+     
 ```
 
-En términos cuantitativos, la diferencia es de alrededor del 5\%, pero como el gráfico muestra la diferencia no es igual entre edades.
+En términos cuantitativos, la diferencia es de alrededor del 7\% en 0-4,mientras de 3% en 5-9.
 
 ```{r}
-censo <- panama_2023 %>% filter(Edad < 10) %>% summarise(Pop = sum(Pop)) %>% pull(Pop)
-lexis <- panama_lexis_pop2023 %>% filter(age < 10) %>% summarise(Pop = sum(pop)) %>% pull(Pop)
-data.frame(Censo = censo, Lexis = lexis, Dif_Abs = censo - lexis, Dif_Rel = (censo - lexis)/censo)
+# censo y estimación por lexis en edades 0-4 y 5-9
+censo <- panama_2023 %>% 
+     filter(Edad < 10) %>% 
+     mutate(Edad = ifelse(Edad < 5, "0-4", "5-9")) %>% 
+     summarise(Pop_censal = sum(Pop), .by = Edad) 
+lexis <- panama_lexis_pop2023 %>% 
+     filter(age < 10) %>% 
+     mutate(Edad = ifelse(age < 5, "0-4", "5-9")) %>% 
+     summarise(Pop_estimada = trunc(sum(pop)), .by = Edad) 
+
+# tabla resumen
+inner_join(censo, lexis) %>% 
+     mutate(Dif_Abs = Pop_censal - Pop_estimada, 
+            Dif_Rel = round((Pop_censal - Pop_estimada)/Pop_censal,2)) %>% 
+     kbl(caption = "Estimación poblacional y censal de menores de 10 años, según edad. Panamá 2023 (inicio de año y fecha de referencia)") %>% 
+     kable_classic(full_width = F)
 ```
 
 
@@ -505,20 +570,24 @@ Método directo e indirecto de Generación extintas
 
 ### Construcción y graduación
 
-Obtengamos la tabla de mortalidad de Panamá para el año 2022. Para eso, requerimos una estimación de la población expuesta de mujeres, por lo que haremos una interpolación por grupo de edad para correr un desde la fecha de referencia censal ("01/02/2023") hacia mitad de año de 2022.
+Obtengamos la tabla de mortalidad de Panamá para el año 2022. Para eso, requerimos una estimación de la población expuesta de mujeres por edades quinquenales (dado que las defunciones lo están), por lo que haremos una interpolación por grupo de edad y sexo para correr desde la fecha de referencia censal ("01/02/2023") hacia mitad de año de 2022, según crecimiento 2010-2023. Atención! Utilizamos este supuesto de interpolación por simplificación, pero puede ser especialmente problemático en casos de alto impacto por covid19 si vamos hacia los años 2020 y 2021 (en general ante cualquier efecto fuerte de período). En [Panamá](https://www.inec.gob.pa/archivos/P0705547520231009114915HUELLAS%20DE%20UNA%20PANDEMIA%20covid-19%20y%20mortalidad%20en%20panam%C3%A1%20CORREGIDO.docx.pdf) se observó un 25\% más de defunciones en 2020 respecto a años previos, por lo que la exposición por grupos de edad (denominador de tasas) puede variar significativamente por su concentración en edades adultas y finales y por su estacionalidad.
 
 ```{r}
-# estimar exposición al 2022
+# población al 2010 y 2023
 panama_2010_2023 <- panama %>%
      filter(Año %in% c(2010, 2023)) %>% 
      mutate(Date = dec.date(dmy(Fecha)),
             Edad = pmin(Edad, 85, na.rm = T)) %>% 
      summarise(Pop = sum(Pop), .by = c(Date, Sexo, Edad))
+
+# estimar exposición al 2022
 panama_exposures_2022 <- bind_rows(
      interp_tidy(panama_2010_2023 %>% filter(Sexo == "Mujer"), Edad, Date, Pop, 2022.5) %>% 
           mutate(Sexo = "Mujer"),
      interp_tidy(panama_2010_2023 %>% filter(Sexo == "Hombre"), Edad, Date, Pop, 2022.5) %>% 
           mutate(Sexo = "Hombre"))
+
+# agrupación en edades quinquenales
 panama_exposures5_2022 <- panama_exposures_2022 %>% 
      mutate(Edad = ifelse(Edad %in% 1:4, 1, pmin(trunc(Edad/5)*5, 85))) %>% 
      summarise(Pop = sum(Pop), .by = c(Sexo, Edad))
@@ -539,6 +608,7 @@ panama_mx5 <- panama_exposures5_2022 %>%
      inner_join(panama_deaths_mujer_2022) %>% 
      mutate(mx = Deaths/Pop,
             Edad_media = Edad + 2.5)
+
 panama_mx5_plot <- panama_mx5 %>% 
      ggplot(aes(Edad, mx)) + 
      geom_step() +
@@ -548,11 +618,12 @@ panama_mx5_plot <- panama_mx5 %>%
 panama_mx5_plot
 ```
 
-El hecho de incluir o no el ajuste a la población menor a 10 impacta en las tasas.
-Si nos interesa extender o ajustar las tasas en edades finales podemos hacer uso del paquete `MortalitiLaws`, para ajustar y predecir tasas en edades finales. Probemos con las leyes `makeham` y `kannisto`, estimando sus parámetros en base a las tasas de las edades 50 a 80, y extendiendo hacia 100 la edad del grupo abierto final.
+Si bien no lo incorporamos, el hecho de incluir o no el ajuste a la población menor a 10 impacta en las tasas, disminuyéndolas. Si nos interesa extender o ajustar las tasas en edades finales podemos hacer uso del paquete `MortalitiLaws`, para ajustar y predecir tasas en edades finales. Probemos con las leyes `makeham` y `kannisto`, estimando sus parámetros en base a las tasas de las edades 50 a 80, y extendiendo hacia 100 la edad del grupo abierto final.
 
 ```{r}
 library(MortalityLaws)
+
+# distintas leyes de ajuste
 makeham_model <- MortalityLaw(x = panama_mx5$Edad, mx = panama_mx5$mx, law = "makeham", fit.this.x = seq(50, 80, 5)) %>% predict(x = seq(50, 100, 5))
 kannisto_model <- MortalityLaw(x = panama_mx5$Edad, mx = panama_mx5$mx, law = "kannisto", fit.this.x = seq(50, 80, 5)) %>% predict(x = seq(50, 100, 5))
 panama_mx5_laws <- data.frame(Edad = rep(seq(50, 100, 5), 2) + 2.5,
@@ -564,16 +635,18 @@ panama_mx5_plot +
      ggtitle("Tasa de mortalidad por edades agrupadas a partir de datos censales y defunciones observadas, y extensión hacia edades finales. Panamá 2022")
 ```
 
-Como se ve, ambas estimaciones se diferencian a partir de la edad 80, ya que desde la edad 50 fueronse utilizó para su ajuste. Por suerte,esta funcionalidad esta ya presente en las funciones de DemoTools, para crear una tabla de mortalidad. Seleccionemos `Makeham`.
+Como se ve, ambas estimaciones se diferencian a partir de la edad 80, ya que desde la edad 50 se utilizó para su ajuste. Por suerte,esta funcionalidad esta ya presente en las funciones de DemoTools, para crear una tabla de mortalidad. Seleccionemos `Makeham`.
 
 ```{r}
+# construcción
 lt_panama_2022 <- lt_abridged(nMx = panama_mx5$mx, Age = panama_mx5$Edad, Sex = "f", OAnew = 100, extrapLaw = "makeham", extrapFit = seq(50, 80,5))
 head(lt_panama_2022)
 ```
 
-Tambien podemos graduar hacia edades simples ya que la función `lt_abridged2single`:
+También podemos graduar hacia edades simples ya que la función `lt_abridged2single`:
 
 ```{r}
+# graduación a edades simples
 lt_panama_2022_simple <- lt_abridged2single(nMx = panama_mx5$mx, Age = panama_mx5$Edad, Sex = "f", OAnew = 100, extrapLaw = "makeham", extrapFit = seq(50, 80, 5))
 panama_mx5_plot +
      geom_line(data =lt_panama_2022_simple, aes(Age, nMx)) +
@@ -588,11 +661,11 @@ lt_panama_2022_simple$ex[lt_panama_2022_simple$Age==0]
 ```
 
 
-### a partir de datos incompletos
+### Uso de tablas modelo
 
-Existen situaciones donde nuestra confianza en las estadísticas vitales no es tan buena, y solo contamos con indicadores resumen como $q_0$, ${}_{5}q_0$, $e_0$ o ${}_{45}q_{15}$, a partir de estimaciones indirectas. O nos interesa saber qué patrón por edad seguiría la mortalidad de nuestra población bajo una de las familias de tablas de mortalidad [@UN]. Para esto tenemos dos funciones implmenentadas por Sara Hertog, adaptando funciones d eun software llamado MortPack (disponible online [aquí](https://teams.microsoft.com/l/message/19:8f377ceb-a5da-44d2-8deb-0d0994fa73bd_cab0a12e-9497-49ac-8b55-89f03bdb3c43@unq.gbl.spaces/1700503389333?context=%7B%22contextType%22%3A%22chat%22%7D) para aquellos más amigos de excel).
+Existen situaciones donde nuestra confianza en las estadísticas vitales no es tan buena, y solo contamos con indicadores resumen a partir de estimaciones indirectas como $q_0$, ${}_{5}q_0$, $e_0$ o ${}_{45}q_{15}$. O también nos puede interesar saber qué patrón por edad seguiría la mortalidad de nuestra población bajo una de las familias de tablas de mortalidad [@UN]. Para esto tenemos dos funciones implementadas por Sara Hertog, adaptando funciones del en software MortPack (disponible online [aquí](https://teams.microsoft.com/l/message/19:8f377ceb-a5da-44d2-8deb-0d0994fa73bd_cab0a12e-9497-49ac-8b55-89f03bdb3c43@unq.gbl.spaces/1700503389333?context=%7B%22contextType%22%3A%22chat%22%7D) para aquellos más amigos de excel).
 
-Por ejemplo bajo la familia Oeste de Coale Demeny, teniendo como insumo solo $e_0$, esta función encuentra la interpolación de tasas que cumple con el valor dado:
+Por ejemplo bajo la familia Oeste de Coale Demeny, teniendo como insumo solo $e_0$, esta función encuentra, dado el nivel, la interpolación de tasas que cumple con el valor dado:
 ```{r}
 e0 <- lt_panama_2022_simple$ex[lt_panama_2022_simple$Age==0]
 panama_2022_mlt_one <- lt_model_cdun_match_single(type = "CD_West",
@@ -601,7 +674,7 @@ panama_2022_mlt_one <- lt_model_cdun_match_single(type = "CD_West",
                            Sex = "f", OAnew = 100)
 ```
 
-Pero tambien podemos tener dos valores, y buscar el nivel que mejor ajuste. En este caso contamos con ${}_1q_0$ y ${}_45q_{15}$:
+Pero también podemos tener dos valores, y buscar el nivel que mejor ajuste dentro de una familia dada. Intentémos con ${}_1q_0$ y ${}_45q_{15}$:
 
 ```{r}
 q0_1 <- lt_panama_2022_simple$nqx[lt_panama_2022_simple$Age==0]
@@ -614,7 +687,7 @@ panama_2022_mlt_two <- lt_model_cdun_combin_single(type = "CD_West",
                             value_adult = q15_45, OAnew = 100)
 ```
 
-Veamos visualmente el resultado:
+Veamos visualmente el resultado de ambos intentos:
 
 ```{r}
 panama_2022_mlts <- bind_rows(lt_panama_2022_simple %>% mutate(MLT = "Observed"),
@@ -622,7 +695,8 @@ panama_2022_mlts <- bind_rows(lt_panama_2022_simple %>% mutate(MLT = "Observed")
                               panama_2022_mlt_two %>% mutate(MLT = "CD_West_q0_&_45q15"))
 panama_2022_mlts %>% 
      ggplot() +
-     geom_line(aes(Age, nMx, col = MLT)) + 
+     geom_point(data = . %>% filter(MLT == "Observed"), aes(Age, nMx)) + 
+     geom_point(data = . %>% filter(MLT != "Observed"), aes(Age, nMx, col = MLT)) +
      scale_y_log10()+
      scale_x_continuous(breaks = seq(0,100,10), labels =  seq(0,100,10), limits = c(0,100)) +
      ggtitle("Tasa de mortalidad por edades simples a partir de datos censales y defunciones observadas, y tablas modelo CD familia West. Panamá 2022") +
@@ -631,13 +705,13 @@ panama_2022_mlts %>%
 
 ¿Qué conclusiones podemos obtener?
 
-Otra opción interesante es la de utilizar el modelo log-quad [@Wilmoth2012], para saber, bajo el patrón de experiencia histórica HMD, cuál serían las tasas por edad que corresponderían a nuestro valor de ${}_1q_0$. Esta función esta implemnetada en paquetes como `MortCast` o `MortalityEstimate`, pero también en [DemoTools](https://timriffe.github.io/DemoTools/reference/lt_model_lq.html)!
+Otra opción interesante es la de utilizar el modelo log-quad [@Wilmoth2012], para saber, bajo el patrón de experiencia histórica HMD, cuál serían las tasas por edad que corresponderían a nuestro valor de ${}_1q_0$. Esta función esta implementada en paquetes como `MortCast` o `MortalityEstimate`, pero también en [DemoTools](https://timriffe.github.io/DemoTools/reference/lt_model_lq.html)!
 
 ## Fecundidad
 
 ### Graduación
 
-Calculemos las tasas abreviadas de fecunidad por edad para Panamá en el año 2022. Para eso, requerimos una estimación de la población expuesta de mujeres, por lo que haremos una interpolación por grupo de edad para correr un desde la fecha de referencia censal ("01/02/2023") hacia mitad de año de 2022.
+Calculemos las tasas abreviadas de fecundidad por edad para Panamá en el año 2022. Para eso, requerimos una estimación de la población expuesta de mujeres, por lo que haremos una interpolación por grupo de edad para correr un desde la fecha de referencia censal ("01/02/2023") hacia mitad de año de 2022.
 ```{r}
 # estimar exposición en 2022
 panama_pop5_2010_2023 <- panama %>%
@@ -670,7 +744,9 @@ panama_asfr5 %>%
      theme_bw()
 ```
 
-Aquí trataremos los métodos de Splines calibrados de [@Schmertmann2014] (código disponible [aquí](https://schmert.net/calibrated-spline/REBEP/)) y Beers (misma método utilizado en secciones previas). Diversas pruebas hechas por el grupo de [HFD](https://www.humanfertility.org/File/GetDocument/Docs/paa/Grigoriev_Jdanov.pdf) muestran que en términos de flexibilidad y ajuste, el orden decreciente sugerido es CS, Spline y Beers. Intentemos  qué resulta para nuestro caso: 
+Aquí trataremos los métodos de splines calibrados de [@Schmertmann2014] (código disponible [aquí](https://schmert.net/calibrated-spline/REBEP/)), Beers (misma método utilizado en secciones previas), y el método de optimización cuadrática ([quadratic optimization](https://www.demogr.mpg.de/papers/technicalreports/tr-2018-002.pdf)) [@Grigoriev2018]. Diversas pruebas hechas por el grupo de [HFD](https://www.humanfertility.org/File/GetDocument/Docs/paa/Grigoriev_Jdanov.pdf) muestran que en términos de flexibilidad y ajuste, el orden decreciente sugerido es CS, Spline y Beers. Intentemos  qué resulta para nuestro caso: 
+
+
 
 ```{r}
 # Beers
@@ -679,11 +755,15 @@ asfr_beers <-  graduate_beers(Value = panama_asfr5$asfr, Age = panama_asfr5$Edad
 # CS
 asfr_cs <- graduate_cs(Value = panama_asfr5$asfr, Age = panama_asfr5$Edad)
 
+# quadratic optimization
+library("quadprog")
+asfr_qo <- QOSplit(c(panama_asfr5$asfr), L=seq(15,45,5), AgeInt=rep(5,7))
+
 # juntar ambas
 asfr_graduation <- data.frame(
-     Edad = rep(15:49, 2),
-     Method = c(rep("Beers", 35), rep("CS", 35)),
-     asfr = c(asfr_beers, asfr_cs))
+     Edad = rep(15:49, 3),
+     Method = c(rep("Beers", 35), rep("CS", 35), rep("QO", 35)),
+     asfr = c(asfr_beers, asfr_cs, spline_cs$ASFR))
 asfr_graduation %>% 
      ggplot(aes(Edad, asfr)) +
      geom_line(aes(col = Method)) +
@@ -702,13 +782,13 @@ asfr_graduation %>%
      bind_rows(data.frame(Method = "Observed", TFR = sum(panama_asfr5$asfr) * 5, Edad_Media = sum(panama_asfr5$asfr*panama_asfr5$Edad_media) / sum(panama_asfr5$asfr)))
 ```
 
-Se puede incorporar 10-14 al ajuste, pero no siempre se obtienen buenos resultados. En algunos casos, para CS es necesario re-calibrar los multiplicadores de spline para tener un buen ajuste.
+Se puede incorporar 10-14 al ajuste. En algunos casos, para CS es mejor re-calibrar los coeficientes de splines para tener un buen ajuste según el aptrón subyacente que se utiliza [@WPP_Method2022].
 
 ## Otros
 
 ### Procedimiento de ajuste proporcional iterativo
 
-En diversas situaciones tenemos una distribución de stock/eventos demográficos según categorías que por provenir de fuentes distintas, sus marginales no respetan totales deseados. Casos típicos son la consistencia flujos migratorios bilaterales (origen-destino), o matrices de cambio de estado entre dos momentos del tiempo, la consistencia por edad de proyecciones en áreas menores respecto a áreas mayores, o absorber categorías desconocidas, entre muchas otras. La técnica que veremos aquí se la conoce como "Procedimiento de ajuste proporcional iterativo" (“Iterative Proportional Fitting”), ”Raking“, o "tabla cuadrada" en ámbitos más demogrpaficos. Es una herramienta simple muy utilizada por muchos Instituos de Estadística Nacionales. Es válido para celdas positivas (0 puede salvarse con 0,0001) y marginales no nulos. Existe una generalización a $n$ variables mediante un enfoque estadístico de regresión log-linear. Como desventaja, no tiene una interpretación demográfica clara.
+En diversas situaciones tenemos una distribución de stock/eventos demográficos según categorías que por provenir de fuentes distintas, sus marginales no respetan totales deseados. Casos típicos son la consistencia flujos migratorios bilaterales (origen-destino), o matrices de cambio de estado entre dos momentos del tiempo, la consistencia por edad de proyecciones en áreas menores respecto a áreas mayores, o absorber categorías desconocidas, entre muchas otras. La técnica que veremos aquí se la conoce como "Procedimiento de ajuste proporcional iterativo" (“Iterative Proportional Fitting”), ”Raking“, o "tabla cuadrada" en ámbitos más demogrpaficos. Es una herramienta simple muy utilizada por muchos Institutos de Estadística Nacionales. Es válido para celdas positivas (0 puede salvarse con 0,0001) y marginales no nulos. Existe una generalización a $n$ variables mediante un enfoque estadístico de regresión log-linear. Como desventaja, no tiene una interpretación demográfica clara.
 
 En este ejemplo veremos un caso donde debemos reportar la población por edad proyectada a 2025 para las áreas menores (Comunas) de la Ciudad Autónoma de Buenos Aires (CABA), y como insumos se tiene:
 
@@ -734,7 +814,7 @@ c <- censo_area_menor_edades_2010 %>%
      as.matrix()
 ```
 
-Si quisiéramos visualizar la matriz, tendríamos lo siguiente, donde los marginales estan coloreados:
+Si quisiéramos visualizar la matriz, tendríamos lo siguiente, donde los marginales están coloreados:
 
 ```{r}
 M <- data.frame(rbind(cbind(c, a), c(b, sum(b))))
@@ -761,22 +841,13 @@ round(colSums(t(censo_area_menor_edades_2025$x.hat)) - a, 5)
 
 El paquete permite incrementar las dimensiones de análisis si se desea. Un excelente tutorial referido a migraciones puede encontrarse en este [Training Session: Tools for working with migration data in R (IPC2021)](https://www.youtube.com/watch?v=4t9sn9Di1q4).
 
-### asignar sexo y edad
-
-```{r,eval = F}
-library(DemoTools)
-DemoTools::mig_un_fam(NM = 5000, family = "Family")
-# DemoTools::mig_estimate_rc()
-```
-
-
 ## Actividad
 
 a) Selecciona un país que te interese y obtén el gráfico de pirámides censales. ¿Qué le llama más la atención?
 
 a) Obtén la evolución temporal de algún indicador de atracción de edad.
 
-a) Para algún año disponible, obtener las tasas de mortalidad por edad y contruir una tabla de mortalidad mediante DemoTools. Suavizarlas por edad simple si es necesario y comparar los resultados.
+a) Para algún año disponible, obtener las tasas de mortalidad por edad y construir una tabla de mortalidad mediante DemoTools. Suavizarlas por edad simple si es necesario y comparar los resultados.
 
 Por último, si sos tan amable, puedes contestar esta breve encuesta sobre el espacio? Gracias!
 
