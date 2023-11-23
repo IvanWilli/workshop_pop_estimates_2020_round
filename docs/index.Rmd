@@ -49,6 +49,7 @@ install.packages("LexisPlotR")
 install.packages("MortalityLaws")
 install.packages("remotes")
 install.packages("quadprog")
+install.packages("kableExtra")
 
 # y la instalación de DemoTools requiere dos pasos
 install.packages("rstan", repos = c("https://mc-stan.org/r-packages/", getOption("repos")))
@@ -60,7 +61,14 @@ El repositorio donde esta alojado esta web lo podes encontrar [aquí](https://gi
 
 ### Data
 
-Como primer paso, creemos un **proyecto** R con todo el contenido descargado en el mismo directorio.
+Como primer paso, creemos un **proyecto** R con todo el contenido descargado en el mismo directorio. Activemos las librerías:
+
+```{r}
+library(tidyverse)
+library(DemoTools)
+library(kableExtra)
+```
+
 
 En [este enlace](https://drive.google.com/drive/folders/16cn3oPaGhLo15eqZld051DfXEFSejK0I?usp=sharing) pueden encontrar un archivo `data_LA.rda` con información sobre la población por edad y sexo relevada en censos de países de  Latinoaméríca y el Caribe, defunciones y nacimientos por edad y sexo, recolectadas las tres series a partir de las publicaciones [Demographic Yearbook](https://unstats.un.org/unsd/demographic-social/products/dyb/) de Naciones Unidas, y disponibles en el portal de datos [DemoData](https://popdiv.dfs.un.org/demodata/web/#!/%23/home). Demos un primer vistazo a la información:
 

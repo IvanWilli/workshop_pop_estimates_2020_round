@@ -812,6 +812,7 @@ install.packages(&quot;LexisPlotR&quot;)
 install.packages(&quot;MortalityLaws&quot;)
 install.packages(&quot;remotes&quot;)
 install.packages(&quot;quadprog&quot;)
+install.packages(&quot;kableExtra&quot;)
 
 # y la instalación de DemoTools requiere dos pasos
 install.packages(&quot;rstan&quot;, repos = c(&quot;https://mc-stan.org/r-packages/&quot;, getOption(&quot;repos&quot;)))
@@ -823,7 +824,11 @@ el contexto de esta ronda censal.</p>
 <div id="data" class="section level3">
 <h3>Data</h3>
 <p>Como primer paso, creemos un <strong>proyecto</strong> R con todo el
-contenido descargado en el mismo directorio.</p>
+contenido descargado en el mismo directorio. Activemos las
+librerías:</p>
+<pre class="r numberLines"><code>library(tidyverse)
+library(DemoTools)
+library(kableExtra)</code></pre>
 <p>En <a href="https://drive.google.com/drive/folders/16cn3oPaGhLo15eqZld051DfXEFSejK0I?usp=sharing">este
 enlace</a> pueden encontrar un archivo <code>data_LA.rda</code> con
 información sobre la población por edad y sexo relevada en censos de
