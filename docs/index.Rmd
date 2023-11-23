@@ -50,6 +50,8 @@ install.packages("MortalityLaws")
 install.packages("remotes")
 install.packages("quadprog")
 install.packages("kableExtra")
+install.packages("MortCast")
+install.packages("zoo")
 
 # y la instalación de DemoTools requiere dos pasos
 install.packages("rstan", repos = c("https://mc-stan.org/r-packages/", getOption("repos")))
