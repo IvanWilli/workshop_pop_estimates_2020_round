@@ -6,11 +6,8 @@ author:
 date: "Actualizado: `r Sys.Date()`"
 output:
   html_document:
-    theme: flatly
+    theme: readable
 bibliography: biblio.bib
-editor_options: 
-  markdown: 
-    wrap: sentence
 ---
 
 ```{r setup, include=FALSE}
@@ -24,6 +21,10 @@ source("funs.R")
 Sys.setlocale("LC_ALL", "Spanish_Spain.UTF-8")
 ```
 
+```{r klippy, echo=FALSE, include=TRUE}
+klippy::klippy()
+```
+
 #  {.tabset}
 
 ## Introducción
@@ -31,7 +32,7 @@ Sys.setlocale("LC_ALL", "Spanish_Spain.UTF-8")
 
 ### Objetivo y setting inicial
 
-El objetivo de este espacio es recorrer algunas técnicas básicas para el análisis demográfico, específicamente en lo relacionado a la evaluación censal. Utlizaremos funciones ya implementadas en paquetes de R y otras que no, pudiendo los asistentes adaptarlas a sus propios fines con posterioridad al workshop. Trataremos ejemplos prácticos con información de países de América Latina.
+El objetivo de este espacio es recorrer algunas técnicas básicas para el análisis demográfico, específicamente en lo que nos toca como profesionales al levantar cada censo. Utlizaremos funciones ya implementadas en paquetes de R y otras que no, pudiendo los asistentes adaptarlas a sus propios fines con posterioridad al workshop. Trataremos ejemplos prácticos con información de países de América Latina.
 
 Nos valdremos principalmente del paquete [DemoTools](https://timriffe.github.io/DemoTools/index.html), elaborado por [Tim Riffe](https://www.ehu.eus/es/web/opik/tim-riffe) y colaboradores. ¡Gracias!
 
@@ -54,15 +55,12 @@ install.packages("rstan", repos = c("https://mc-stan.org/r-packages/", getOption
 remotes::install_github("timriffe/DemoTools")
 ```
 
-Utilizaremos funciones que no estan implementadas aún en paquetes, incluidas en el script:
-```{r}
-source("funs.R")
-```
-
 El repositorio donde esta alojado esta web lo podes encontrar [aquí](https://github.com/IvanWilli/workshop_pop_estimates_2020_round). Esperamos que este contenido les sirva para complementar su trabajo en el contexto de esta ronda censal.
 
 
 ### Data
+
+Como primer paso, creemos un **proyecto** R con todo el contenido descargado en el mismo directorio.
 
 En [este enlace](https://drive.google.com/drive/folders/16cn3oPaGhLo15eqZld051DfXEFSejK0I?usp=sharing) pueden encontrar un archivo `data_LA.rda` con información sobre la población por edad y sexo relevada en censos de países de  Latinoaméríca y el Caribe, defunciones y nacimientos por edad y sexo, recolectadas las tres series a partir de las publicaciones [Demographic Yearbook](https://unstats.un.org/unsd/demographic-social/products/dyb/) de Naciones Unidas, y disponibles en el portal de datos [DemoData](https://popdiv.dfs.un.org/demodata/web/#!/%23/home). Demos un primer vistazo a la información:
 
@@ -110,11 +108,16 @@ bind_rows(deaths_LA %>% mutate(Evento = "Defunciones"),
 
 Si quieres ver en profundidad la obtención de la información puedes ver el script `get_data.R` en el [repositorio](https://github.com/IvanWilli/workshop_pop_estimates_2020_round/tree/main/docs).
 
+Utilizaremos funciones que no estan implementadas aún en paquetes, incluidas en el script:
+```{r}
+source("funs.R")
+```
+
 ## Población
 
 ### Evolución censal
 
-Sigamos con el caso de Panamá, aprovechando la publicación reciente sobre el censo 2023. Fue un censo [de-jure](https://www.inec.gob.pa/archivos/P0705547520231009161454Definiciones%20y%20explicaciones%20Censo%202023%20RFB-VF.pdf), resultando en más de [4 millones](https://www.inec.gob.pa/archivos/P053342420231009161532Comentarios_Poblacion%20RFB%202023%20VF.pdf) de personas residentes. La dinámica demográfica de este país estuvo muy relacionada con el desarrollo del canal, influenciando el nivel de desarrollo económico y la condición de país atractor para la migración [@INEC2016].
+Sigamos con el caso de Panamá, aprovechando la publicación reciente sobre el censo 2023. Fue un censo [de-jure](https://www.inec.gob.pa/archivos/P0705547520231009161454Definiciones%20y%20explicaciones%20Censo%202023%20RFB-VF.pdf), con campo del 8 de enero al 6 de marzo del 2023, resultando en más de [4 millones](https://www.inec.gob.pa/archivos/P053342420231009161532Comentarios_Poblacion%20RFB%202023%20VF.pdf) de personas residentes. La dinámica demográfica de este país estuvo muy relacionada con el desarrollo del canal, influenciando el nivel de desarrollo económico y la condición de país atractor para la migración [@INEC2016].
 
 Resumamos en la siguiente tabla la evolución de la población censada, la fecha y tipo de censo, el ritmo de crecimiento (tasa de crecimiento medio anual), el porcentaje de mujeres y la edad media:
 
@@ -173,7 +176,7 @@ El índice de masculinidad permite ver el proceso de feminización visto en la t
 
 ```{r}
 panama %>% 
-     filter(Edad < 100) %>% 
+     filter(Edad < 100, Año != 1970) %>% 
      summarise(IM = Pop[Sexo=="Hombre"]/Pop[Sexo=="Mujer"], .by = c(Edad, Año)) %>% 
      ggplot(aes(Edad, IM, col = factor(Año))) +
      geom_line(data = . %>% filter(Año < 2023)) +
@@ -206,7 +209,7 @@ panama_2010_2023_cohort_ratios <- panama %>%
 head(panama_2010_2023_cohort_ratios)
 ```
 
-Aquellos valores por encima de 1 pueden hablar de omisión diferencial entre censos o fenómenos demográficos específicos (aunque de vuelta, el método ve consistencia). Por ejemplo la población nacida entre 2005 y 2009 parece estar subenumerada en 2010 (la población censada 13 años después es mayor). Luego en las cohortes 1995-1980 (con edades activas en período intercensal) se observa un ratio mayor a 1 en mujeres, y en varones cierta estabilidad. Luego en cohortes más antiguas el comportamiento es decreciente, como se espera.
+Aquellos valores por encima de 1 pueden hablar de omisión diferencial entre censos o fenómenos demográficos específicos (aunque de vuelta, el método ve consistencia). Por ejemplo la población nacida entre 2005 y 2009 parece estar subenumerada en 2010 (la población censada 13 años después es mayor). Luego en las cohortes 1995-1980 (con edades activas en período intercensal) se observa un ratio mayor a 1 en mujeres, y en varones cierta estabilidad. Luego en cohortes más antiguas el comportamiento es decreciente, como se espera. Ojo! esta condicionado al cambio de tipo de censo también.
 
 ```{r}
 panama_2010_2023_cohort_ratios %>%
@@ -560,11 +563,6 @@ inner_join(censo, lexis) %>%
      kable_classic(full_width = F)
 ```
 
-
-### Edad finales
-
-Método directo e indirecto de Generación extintas
-
 ## Mortalidad
 
 ### Construcción y graduación
@@ -698,7 +696,7 @@ panama_2022_mlts %>%
      geom_point(data = . %>% filter(MLT != "Observed"), aes(Age, nMx, col = MLT)) +
      scale_y_log10()+
      scale_x_continuous(breaks = seq(0,100,10), labels =  seq(0,100,10), limits = c(0,100)) +
-     ggtitle("Tasa de mortalidad por edades simples a partir de \ndatos censales y defunciones observadas, y tablas modelo CD familia West. Panamá 2022") +
+     ggtitle("Tasa de mortalidad por edades simples a partir de \ndatos censales y defunciones observadas, \ny tablas modelo CD familia West. Panamá 2022") +
      theme_bw()
 ```
 
@@ -710,21 +708,9 @@ Otra opción interesante es la de utilizar el modelo log-quad [@Wilmoth2012], pa
 
 ### Graduación
 
-Calculemos las tasas abreviadas de fecundidad por edad para Panamá en el año 2022. Para eso, requerimos una estimación de la población expuesta de mujeres, por lo que haremos una interpolación por grupo de edad para correr un desde la fecha de referencia censal ("01/02/2023") hacia mitad de año de 2022.
-```{r}
-# estimar exposición en 2022
-panama_pop5_2010_2023 <- panama %>%
-     filter(País == "Panama", Año %in% c(2010, 2023), !is.na(Edad)) %>% 
-     # convertir la fecha a número con dec.date (DemoTools)
-     mutate(Date = dec.date(dmy(Fecha)),
-            Edad = pmin(trunc(Edad/5)*5, 100)) %>% 
-     summarise(Pop = sum(Pop), .by = c(Date, Sexo, Edad))
-panama_exposures5_2022 <- bind_rows(
-     interp_tidy(panama_pop5_2010_2023 %>% filter(Sexo == "Mujer"), Edad, Date, Pop, 2022.5) %>% 
-          mutate(Sexo = "Mujer"),
-     interp_tidy(panama_pop5_2010_2023 %>% filter(Sexo == "Hombre"), Edad, Date, Pop, 2022.5) %>% 
-          mutate(Sexo = "Hombre"))
+Calculemos las tasas abreviadas de fecundidad por edad para Panamá en el año 2022. Para eso, utilicemos la estimación de la población expuesta de mujeres hecha previamente, y recuperemos los nacimientos por edad de la madre.
 
+```{r}
 # obtener nacimientos en 2022
 panama_births5_2022 <- births_LA %>% 
      filter(País ==  "Panama", Año == 2022, Edad %in% 15:45) %>% 
@@ -743,8 +729,7 @@ panama_asfr5 %>%
      theme_bw()
 ```
 
-Aquí trataremos los métodos de splines calibrados de [@Schmertmann2014] (código disponible [aquí](https://schmert.net/calibrated-spline/REBEP/)), Beers (misma método utilizado en secciones previas), y el método de optimización cuadrática ([quadratic optimization](https://www.demogr.mpg.de/papers/technicalreports/tr-2018-002.pdf)) [@Grigoriev2018]. Diversas pruebas hechas por el grupo de [HFD](https://www.humanfertility.org/File/GetDocument/Docs/paa/Grigoriev_Jdanov.pdf) muestran que en términos de flexibilidad y ajuste, el orden decreciente sugerido es CS, Spline y Beers. Intentemos  qué resulta para nuestro caso: 
-
+Aquí trataremos los métodos de splines calibrados de [@Schmertmann2014] (código disponible [aquí](https://schmert.net/calibrated-spline/REBEP/)), Beers (misma método utilizado en secciones previas), y el método de optimización cuadrática ([quadratic optimization](https://www.demogr.mpg.de/papers/technicalreports/tr-2018-002.pdf)) [@Grigoriev2018]. Diversas pruebas hechas por el grupo de [HFD](https://www.humanfertility.org/File/GetDocument/Docs/paa/Grigoriev_Jdanov.pdf) muestran que en términos de flexibilidad y ajuste, el orden decreciente sugerido es CS y Beers. Intentemos  qué resulta para nuestro caso: 
 
 
 ```{r}
@@ -840,14 +825,18 @@ round(colSums(t(censo_area_menor_edades_2025$x.hat)) - a, 5)
 
 El paquete permite incrementar las dimensiones de análisis si se desea. Un excelente tutorial referido a migraciones puede encontrarse en este [Training Session: Tools for working with migration data in R (IPC2021)](https://www.youtube.com/watch?v=4t9sn9Di1q4).
 
+### Patrones de migración neta por edad
+
+Veamos las funciones `mig_un_fam` (patrón dado según familias UN) y `mig_estimate_rc` (estimación bayesiana de parámetros de modelo Roger-Castro, tutorial [aquí](https://timriffe.github.io/DemoTools/articles/migration_with_demotools.html)).
+
 ## Actividad
 
-a) Selecciona un país que te interese y obtén el gráfico de pirámides censales. ¿Qué le llama más la atención?
+a) Selecciona un país que te interese y obtén el gráfico de pirámides censales. ¿Qué llama más la atención?
 
-a) Obtén la evolución temporal de algún indicador de atracción de edad.
+a) Obtén la evolución temporal de 1 o más indicadores de atracción de dígitos en la edad.
 
-a) Para algún año disponible, obtener las tasas de mortalidad por edad y construir una tabla de mortalidad mediante DemoTools. Suavizarlas por edad simple si es necesario y comparar los resultados.
+a) Para algún país con datos de defunciones en algún año censal disponible, obtener las tasas de mortalidad por edad y construir una tabla de mortalidad mediante `DemoTools`. Probar distintos ajustes en edades finales.
 
-Por último, si sos tan amable, puedes contestar esta breve encuesta sobre el espacio? Gracias!
+Por último, si sos tan amable, puedes contestar [esta breve encuesta](https://es.surveymonkey.com/r/Z7P56FR)? Gracias!
 
 ## Referencias
