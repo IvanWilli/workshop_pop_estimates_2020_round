@@ -151,7 +151,7 @@ write.csv(all_births_age_LA %>%
 # download census data from DemoPortal
 options(timeout = 5000)
 all_deaths <- map(
-     c(591, 76, 152, 32), # some LA_countries, too much data 
+     c(591, 76, 152, 32, 218, 188, 170), # some LA_countries, too much data 
      function(X){
           print(X)
           tryCatch(
